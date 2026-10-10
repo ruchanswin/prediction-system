@@ -7,7 +7,7 @@ fastapi==0.115.4
 h11==0.14.0
 idna==3.10
 joblib==1.4.2
-lightgbm==4.5.0
+onnxruntime==1.23.2
 numpy==2.0.2
 pandas==2.2.3
 pydantic==2.9.2

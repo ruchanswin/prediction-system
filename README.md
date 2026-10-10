@@ -135,6 +135,13 @@ Never use a `VITE_` prefix or expose the service-role key to the frontend.
 
 The backend pins `xgboost-cpu` rather than the standard `xgboost` distribution. The delay classifier runs on CPU, and the CPU-only distribution avoids XGBoost's large Linux NCCL dependency, which can exceed Vercel's function bundle-size limit.
 
+The delay regressor is served as ONNX so the Vercel runtime does not need LightGBM's Linux `libgomp.so.1` library. To regenerate the ONNX artifact after replacing the original trained model, install the conversion-only dependencies and run the exporter from the backend directory:
+
+```
+pip install -r requirements-conversion.txt
+python export_delay_model.py
+```
+
 ### Prediction history
 Prediction history is stored in the `fare_predictions` and `delay_predictions`
 Supabase tables. The history endpoints read these tables through the Supabase

@@ -5,6 +5,8 @@ from pydantic import BaseModel
 import joblib
 import pandas as pd
 import logging
+import numpy as np
+import onnxruntime as ort
 from pathlib import Path
 from model.supabase_store import fetch_predictions, insert_prediction
 from sklearn.compose import ColumnTransformer
@@ -27,7 +29,11 @@ app.add_middleware(
 # Load the regression model and preprocessor components
 try:
     backend_dir = Path(__file__).resolve().parents[1]
-    model = joblib.load(backend_dir / "model" / "lgbm_regressor_delay.pkl")
+    delay_session = ort.InferenceSession(
+        str(backend_dir / "model" / "delay_regressor.onnx"),
+        providers=["CPUExecutionProvider"],
+    )
+    delay_input_name = delay_session.get_inputs()[0].name
     preprocessor = joblib.load(backend_dir / "preprocessor" / "preprocessorfordelays.pkl")
 except Exception as e:
     logging.error(f"Failed to load model or preprocessor: {str(e)}")
@@ -116,7 +122,11 @@ def transform_features(data: FlightDelayRequest):
 async def predict_delay(flight_data: FlightDelayRequest):
     try:
         features = transform_features(flight_data)
-        predicted_delay = model.predict(features)
+        predicted_delay = delay_session.run(
+            None,
+            {delay_input_name: features.to_numpy(dtype=np.float32)},
+        )[0].reshape(-1)
+        predicted_delay_value = round(float(predicted_delay[0]), 2)
 
         insert_prediction("delay_predictions", {
             "month": flight_data.month,
@@ -129,10 +139,10 @@ async def predict_delay(flight_data: FlightDelayRequest):
             "departure_delay": flight_data.departureDelay,
             "air_time": float(math.ceil(flight_data.airTime * 100)) / 100,
             "distance": flight_data.distance,
-            "predicted_delay": round(predicted_delay[0], 2),
+            "predicted_delay": predicted_delay_value,
         })
 
-        return {"predicted_delay": round(predicted_delay[0], 2)}
+        return {"predicted_delay": predicted_delay_value}
     except Exception as e:
         logging.error(f"Prediction error: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction error.")
