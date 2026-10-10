@@ -9,8 +9,13 @@ from sqlalchemy.orm import sessionmaker
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define database URL using an environment variable
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./delay_prediction.db")
+# Vercel's function filesystem is read-only; /tmp is writable but ephemeral.
+DEFAULT_DATABASE_URL = (
+    "sqlite:////tmp/delay_prediction.db"
+    if os.getenv("VERCEL") == "1"
+    else "sqlite:///./delay_prediction.db"
+)
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 # Create the database engine
 engine = create_engine(DATABASE_URL)

@@ -128,7 +128,7 @@ The Vite development server proxies `/api` requests to this backend. The combine
 
 The root `vercel.json` defines two services: `backend` (FastAPI, rooted at `backend/`) and `frontend` (Vite, rooted at `frontend/`). Requests under `/api/` route to the backend; all other paths route to the frontend.
 
-The prediction APIs currently fall back to local SQLite databases. Vercel function filesystems are not durable, so configure `DATABASE_URL` to use a managed database (and add its SQLAlchemy driver to `backend/requirements.txt`) if prediction history must persist between requests or deployments.
+The prediction APIs use local SQLite databases by default. On Vercel, the fallback database files are placed in `/tmp`, which is writable but ephemeral and may not persist between function instances or deployments. Configure `DATABASE_URL` to use a managed database (and add its SQLAlchemy driver to `backend/requirements.txt`) if prediction history must persist.
 
 The backend pins `xgboost-cpu` rather than the standard `xgboost` distribution. The delay classifier runs on CPU, and the CPU-only distribution avoids XGBoost's large Linux NCCL dependency, which can exceed Vercel's function bundle-size limit.
 
@@ -141,5 +141,4 @@ To be able to observe the database of the delay prediction and fare prediction, 
 Both databases are stored in the backend folder.)
 4. After opening the database, you can view the tables and data in the database by choosing the 'Browse Data' tab and you could execute SQL commands on 'Execute SQL' tab.
 This app is a high quality, visual, open source tool designed for people who want to create, search, and edit SQLite or SQLCipher database files. It works with Windows, macOS, and most versions of Linux and Unix.
-
 
