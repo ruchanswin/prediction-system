@@ -1,13 +1,12 @@
 # backend/model/delay_prediction.py
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import pandas as pd
 import logging
 from pathlib import Path
-from sqlalchemy.orm import Session
-from model.delay_prediction_db import DelayPrediction, get_db
+from model.supabase_store import fetch_predictions, insert_prediction
 from sklearn.compose import ColumnTransformer
 import math
 from fastapi.responses import JSONResponse
@@ -114,38 +113,33 @@ def transform_features(data: FlightDelayRequest):
 
 # Prediction endpoint
 @router.post("/delay/predict/")
-async def predict_delay(flight_data: FlightDelayRequest, db: Session = Depends(get_db)):
+async def predict_delay(flight_data: FlightDelayRequest):
     try:
         features = transform_features(flight_data)
         predicted_delay = model.predict(features)
 
-        # Save to database
-        prediction_entry = DelayPrediction(
-            month=flight_data.month,
-            day=flight_data.day,
-            daysofweek=flight_data.daysofweek,
-            originAirport=flight_data.originAirport,
-            destinationAirport=flight_data.destinationAirport,
-            scheduledDeparture=flight_data.scheduledDeparture,
-            scheduledArrival=flight_data.scheduledArrival,
-            departureDelay=flight_data.departureDelay,
-            airTime=float(math.ceil(flight_data.airTime * 100)) / 100,
-            distance=flight_data.distance,
-            predicted_delay=round(predicted_delay[0], 2)
-        )
-        db.add(prediction_entry)
-        db.commit()
-        db.refresh(prediction_entry)
+        insert_prediction("delay_predictions", {
+            "month": flight_data.month,
+            "day": flight_data.day,
+            "daysofweek": flight_data.daysofweek,
+            "origin_airport": flight_data.originAirport,
+            "destination_airport": flight_data.destinationAirport,
+            "scheduled_departure": flight_data.scheduledDeparture,
+            "scheduled_arrival": flight_data.scheduledArrival,
+            "departure_delay": flight_data.departureDelay,
+            "air_time": float(math.ceil(flight_data.airTime * 100)) / 100,
+            "distance": flight_data.distance,
+            "predicted_delay": round(predicted_delay[0], 2),
+        })
 
         return {"predicted_delay": round(predicted_delay[0], 2)}
     except Exception as e:
         logging.error(f"Prediction error: {str(e)}")
-        db.rollback()
         raise HTTPException(status_code=500, detail="Prediction error.")
     
 # Classification endpoint
 @router.post("/delay/classify/")
-async def classify_delay(flight_data: FlightDelayRequest, db: Session = Depends(get_db)):
+async def classify_delay(flight_data: FlightDelayRequest):
     try:
         # Transform the input data with the predicted delay added
         input_df = pd.DataFrame({
@@ -180,13 +174,33 @@ async def classify_delay(flight_data: FlightDelayRequest, db: Session = Depends(
     
     except Exception as e:
         logging.error(f"Classification error: {str(e)}")
-        db.rollback()
         raise HTTPException(status_code=500, detail="Error classifying flight delay")
 
 # Get stored predictions
 @router.get("/delay/predictions/")
-async def get_predictions(db: Session = Depends(get_db)):
-    return db.query(DelayPrediction).all()
+async def get_predictions():
+    try:
+        predictions = fetch_predictions("delay_predictions")
+        return [
+            {
+                "id": prediction["id"],
+                "month": prediction["month"],
+                "day": prediction["day"],
+                "daysofweek": prediction["daysofweek"],
+                "originAirport": prediction["origin_airport"],
+                "destinationAirport": prediction["destination_airport"],
+                "scheduledDeparture": prediction["scheduled_departure"],
+                "scheduledArrival": prediction["scheduled_arrival"],
+                "departureDelay": prediction["departure_delay"],
+                "airTime": prediction["air_time"],
+                "distance": prediction["distance"],
+                "predicted_delay": prediction["predicted_delay"],
+            }
+            for prediction in predictions
+        ]
+    except Exception as e:
+        logging.error(f"Could not fetch delay predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Delay predictions cannot be fetched.")
 
 # Run app
 app.include_router(router)

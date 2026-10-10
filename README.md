@@ -25,12 +25,12 @@ COS30049-COMPUTING-TECHNOLOGY-INNOVATION-PROJECT_FLIGHTFORESIGHT
 ├───backend
 │   │   .DS_Store
 │   │   requirements.txt
+│   │   supabase_schema.sql
 │   │  
 │   ├───model
 │   │      delay_prediction.py
-│   │      delay_prediction_db.py
 │   │      fare_prediction.py
-│   │      fare_prediction_db.py
+│   │      supabase_store.py
 │   │      lgbm_regressor_delay.pkl
 │   │      rf_regressor.pkl
 │   │      xgboost_tuned_model.pkl
@@ -125,11 +125,17 @@ The Vite development server proxies `/api` requests to this backend. The combine
 
 The root `vercel.json` defines two services: `backend` (FastAPI, rooted at `backend/`) and `frontend` (Vite, rooted at `frontend/`). Requests under `/api/` route to the backend; all other paths route to the frontend.
 
-The prediction APIs use local SQLite databases during local development. For Vercel, configure `DATABASE_URL` with your Supabase Postgres connection string; the backend requires it in Vercel rather than writing prediction history to ephemeral function storage. In Supabase, copy a database connection string from **Project Settings → Database → Connection string**. Use the pooler connection string for serverless deployments, and add it to the Vercel project's **Settings → Environment Variables** as `DATABASE_URL` for every environment where the app is deployed. Redeploy after changing the variable.
-
-Keep `DATABASE_URL` server-side only: do not use a `VITE_` prefix or expose it in frontend code. The backend creates the `fare_prediction` and `delay_prediction` tables from its SQLAlchemy models when it connects. Prediction history is then stored in Supabase Postgres rather than local files.
+Prediction results and history use the Supabase Data API. In Supabase, run
+[`backend/supabase_schema.sql`](./backend/supabase_schema.sql) in the SQL Editor
+to create the `fare_predictions` and `delay_predictions` tables. The backend
+uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; configure both as
+server-side environment variables in Vercel and redeploy. For local development,
+set these variables in the backend process environment before starting Uvicorn.
+Never use a `VITE_` prefix or expose the service-role key to the frontend.
 
 The backend pins `xgboost-cpu` rather than the standard `xgboost` distribution. The delay classifier runs on CPU, and the CPU-only distribution avoids XGBoost's large Linux NCCL dependency, which can exceed Vercel's function bundle-size limit.
 
-### Database
-For local development without `DATABASE_URL`, the prediction APIs create `fare_prediction.db` and `delay_prediction.db` in the backend folder. To use Supabase locally, set `DATABASE_URL` in the backend process environment before starting Uvicorn. You can inspect Supabase prediction history in the Supabase SQL Editor by querying the `fare_prediction` and `delay_prediction` tables.
+### Prediction history
+Prediction history is stored in the `fare_predictions` and `delay_predictions`
+Supabase tables. The history endpoints read these tables through the Supabase
+Data API. The SQL Editor can also be used to inspect the saved records.

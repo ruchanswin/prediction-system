@@ -1,5 +1,5 @@
 # backend/model/fare_prediction.py
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
@@ -8,8 +8,7 @@ import logging
 from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from model.fare_prediction_db import FarePrediction, get_db
+from model.supabase_store import fetch_predictions, insert_prediction
 import math
 
 # Initialize FastAPI app
@@ -81,66 +80,58 @@ def transform_features(data: FlightFareRequest):
 
 # Prediction endpoint
 @router.post("/fare/predict/")
-async def predict_flight_fare(flight_data: FlightFareRequest, db: Session = Depends(get_db)):
+async def predict_flight_fare(flight_data: FlightFareRequest):
     try:
-        # Transform input data into model features
-        features = transform_features(flight_data)
-
-        # Perform prediction using the loaded model
-        predicted_fare = model.predict(features)
-
-        # Store the features and prediction in the database
-        flight_prediction = FarePrediction(
-            airline=flight_data.airline,
-            source_city=flight_data.sourceCity,
-            destination_city=flight_data.destinationCity,
-            departure_time=flight_data.departureTime,
-            arrival_time=flight_data.arrivalTime,
-            stops=flight_data.stops,
-            flight_class=flight_data.flightClass,
-            duration=float(math.ceil(flight_data.duration * 100)) / 100,
-            days_left=flight_data.days_left,
-            predicted_fare=round(predicted_fare[0], 2)
-        )
-        db.add(flight_prediction)
-        db.commit()
-        db.refresh(flight_prediction)
+        predicted_fare = await predict_and_store(flight_data, flight_data.days_left)
 
         # Return the predicted fare (rounded to 2 decimal places)
-        return JSONResponse(content={"predicted_fare": round(predicted_fare[0], 2)})
+        return JSONResponse(content={"predicted_fare": predicted_fare})
     
     except Exception as e:
         logging.error(f"Prediction error: {str(e)}")
-        db.rollback()
         raise HTTPException(status_code=500, detail="Flight fare cannot be predicted.")
 
-async def predict_and_store(flight_data: FlightFareRequest, days_left: int, db: Session):
-    features = transform_features(flight_data)
+async def predict_and_store(flight_data: FlightFareRequest, days_left: int):
+    request = flight_data.model_copy(update={"days_left": days_left})
+    features = transform_features(request)
     predicted_fare = model.predict(features)
     predicted_fare = round(predicted_fare[0], 2)
+
+    insert_prediction("fare_predictions", {
+        "airline": request.airline,
+        "source_city": request.sourceCity,
+        "destination_city": request.destinationCity,
+        "departure_time": request.departureTime,
+        "arrival_time": request.arrivalTime,
+        "stops": request.stops,
+        "flight_class": request.flightClass,
+        "duration": float(math.ceil(request.duration * 100)) / 100,
+        "days_left": request.days_left,
+        "predicted_fare": predicted_fare,
+    })
 
     return predicted_fare
 
 # Define separate endpoints for each scenario with different "days_left" values
 @router.post("/fare/predict/day_0/")
-async def predict_fare_day_0(flight_data: FlightFareRequest, db: Session = Depends(get_db)):
-    return {"predicted_fare": await predict_and_store(flight_data, days_left=0, db=db)}
+async def predict_fare_day_0(flight_data: FlightFareRequest):
+    return {"predicted_fare": await predict_and_store(flight_data, days_left=0)}
 
 @router.post("/fare/predict/day_1/")
-async def predict_fare_day_1(flight_data: FlightFareRequest, db: Session = Depends(get_db)):
-    return {"predicted_fare": await predict_and_store(flight_data, days_left=1, db=db)}
+async def predict_fare_day_1(flight_data: FlightFareRequest):
+    return {"predicted_fare": await predict_and_store(flight_data, days_left=1)}
 
 @router.post("/fare/predict/day_7/")
-async def predict_fare_day_7(flight_data: FlightFareRequest, db: Session = Depends(get_db)):
-    return {"predicted_fare": await predict_and_store(flight_data, days_left=7, db=db)}
+async def predict_fare_day_7(flight_data: FlightFareRequest):
+    return {"predicted_fare": await predict_and_store(flight_data, days_left=7)}
 
 @router.post("/fare/predict/day_14/")
-async def predict_fare_day_14(flight_data: FlightFareRequest, db: Session = Depends(get_db)):
-    return {"predicted_fare": await predict_and_store(flight_data, days_left=14, db=db)}
+async def predict_fare_day_14(flight_data: FlightFareRequest):
+    return {"predicted_fare": await predict_and_store(flight_data, days_left=14)}
 
 @router.post("/fare/predict/day_30/")
-async def predict_fare_day_30(flight_data: FlightFareRequest, db: Session = Depends(get_db)):
-    return {"predicted_fare": await predict_and_store(flight_data, days_left=30, db=db)}
+async def predict_fare_day_30(flight_data: FlightFareRequest):
+    return {"predicted_fare": await predict_and_store(flight_data, days_left=30)}
 
 # Root endpoint 
 @router.get("/fare")
@@ -149,9 +140,12 @@ async def root():
 
 # Endpoint to get the prediction record stored in the database
 @router.get("/fare/predictions/")
-async def get_predictions(db: Session = Depends(get_db)):
-    predictions = db.query(FarePrediction).all()
-    return predictions
+async def get_predictions():
+    try:
+        return fetch_predictions("fare_predictions")
+    except Exception as e:
+        logging.error(f"Could not fetch fare predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Fare predictions cannot be fetched.")
 
 # Main execution
 app.include_router(router)
