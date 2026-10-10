@@ -7,6 +7,7 @@ import pandas as pd
 import logging
 import numpy as np
 import onnxruntime as ort
+from scipy.sparse import csr_matrix
 from pathlib import Path
 from model.supabase_store import fetch_predictions, insert_prediction
 from sklearn.compose import ColumnTransformer
@@ -113,7 +114,10 @@ def transform_features(data: FlightDelayRequest):
             input_df[col] = 0  # Handle unseen labels by setting a default
 
     # Scale numerical columns
-    input_df[numerical_cols] = column_transformer.fit_transform(input_df[numerical_cols])
+    scaled_values = column_transformer.fit_transform(input_df[numerical_cols])
+    if not isinstance(scaled_values, np.ndarray):
+        scaled_values = csr_matrix(scaled_values).toarray()
+    input_df[numerical_cols] = scaled_values
     
     return input_df[categorical_cols + numerical_cols]
 
@@ -122,10 +126,11 @@ def transform_features(data: FlightDelayRequest):
 async def predict_delay(flight_data: FlightDelayRequest):
     try:
         features = transform_features(flight_data)
-        predicted_delay = delay_session.run(
+        predicted_delay_output = delay_session.run(
             None,
             {delay_input_name: features.to_numpy(dtype=np.float32)},
-        )[0].reshape(-1)
+        )[0]
+        predicted_delay = np.asarray(predicted_delay_output).reshape(-1)
         predicted_delay_value = round(float(predicted_delay[0]), 2)
 
         insert_prediction("delay_predictions", {
