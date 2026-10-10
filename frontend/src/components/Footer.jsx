@@ -13,7 +13,7 @@ function Footer() {
           <p>Made by Civil Aviation Association</p>
         </div>
         <div className="footer-icons">
-          <a href="https://github.com/EichanInIt/COS30049-Computing-Technology-Innovation-Project_FlightForesight" target="_blank" rel="noopener noreferrer" className="footer-icon">
+          <a href="https://github.com/ruchanswin/prediction-system" target="_blank" rel="noopener noreferrer" className="footer-icon">
             <FontAwesomeIcon icon={faGithub} />
           </a>
         </div>
