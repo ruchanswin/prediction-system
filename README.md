@@ -41,14 +41,11 @@ COS30049-COMPUTING-TECHNOLOGY-INNOVATION-PROJECT_FLIGHTFORESIGHT
 │
 └───flightforesight
     │   .gitignore
-    │   airlines.json
-    │   airports.json
     │   eslint.config.js
     │   index.html
     │   package-lock.json
     │   package.json
     │   README.md
-    │   USA_airports.json
     │   vite.config.js
     │
     └───src
