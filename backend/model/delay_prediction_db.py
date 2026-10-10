@@ -9,16 +9,14 @@ from sqlalchemy.orm import sessionmaker
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Vercel's function filesystem is read-only; /tmp is writable but ephemeral.
-DEFAULT_DATABASE_URL = (
-    "sqlite:////tmp/delay_prediction.db"
-    if os.getenv("VERCEL") == "1"
-    else "sqlite:///./delay_prediction.db"
-)
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    if os.getenv("VERCEL") == "1":
+        raise RuntimeError("DATABASE_URL must be configured for the Vercel deployment.")
+    DATABASE_URL = "sqlite:///./delay_prediction.db"
 
 # Create the database engine
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Base = declarative_base()
 
 # Define the DelayPrediction model

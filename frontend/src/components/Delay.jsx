@@ -8,13 +8,15 @@ import {
   Button,
   TextField,
   CircularProgress,
-  Autocomplete
+  Autocomplete,
+  Alert
 } from "@mui/material";
 import { motion } from "framer-motion";
 import FlightPath from './FlightPath';
 import FlightTableForDelay from "./FlightTableForDelay";
 import ScatterPlotForDelay from "./ScatterPlotForDelay";
 import axios from "axios";
+import { fetchAllRows } from "../utils/supabase";
 
 const Delay = () => {
   // State variables to manage form inputs, loading states, and fetched data
@@ -24,6 +26,8 @@ const Delay = () => {
   const [scheduledArrival, setScheduledArrival] = useState("");
   const [realDeparture, setRealDeparture] = useState("");
   const [airports, setAirports] = useState([]);
+  const [datasetsLoading, setDatasetsLoading] = useState(true);
+  const [datasetsError, setDatasetsError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirmations, setConfirmations] = useState([]);
   const [flightPath, setFlightPath] = useState([]);
@@ -32,19 +36,37 @@ const Delay = () => {
   const [predictions, setPredictions] = useState([]);
   const [showScatterPlot, setShowScatterPlot] = useState(false);
 
-  // Fetch the airport data from a local JSON file when the component mounts
-  const fetchAirportsData = async () => {
-    try {
-      const response = await fetch("USA_airports.json"); 
-      const data = await response.json();
-      setAirports(data);
-    } catch (error) {
-      console.error("Airports data cannot be fetched:", error);
-    }
-  };
-
   useEffect(() => {
-    fetchAirportsData();
+    async function loadAirports() {
+      try {
+        const airportRows = await fetchAllRows("USA_airports");
+        const airportsWithCoordinates = airportRows.filter((airport) => {
+          const latitude = Number(airport.latitude);
+          const longitude = Number(airport.longitude);
+          return (
+            airport.iata &&
+            airport.name &&
+            Number.isFinite(latitude) &&
+            Number.isFinite(longitude)
+          );
+        });
+
+        if (!airportsWithCoordinates.length) {
+          throw new Error(
+            'No usable airports found. The "USA_airports" table must contain iata, name, latitude, and longitude columns.'
+          );
+        }
+
+        setAirports(airportsWithCoordinates);
+      } catch (error) {
+        console.error("Supabase airport dataset cannot be fetched:", error);
+        setDatasetsError(error.message || "An unexpected error occurred.");
+      } finally {
+        setDatasetsLoading(false);
+      }
+    }
+
+    loadAirports();
   }, []);
 
   // Calculate distance between origin and destination airports based on coordinates
@@ -71,8 +93,14 @@ const Delay = () => {
     setLoading(true);
     setShowScatterPlot(false);
 
+    if (!originAirport || !destinationAirport) {
+      alert("Please select valid origin and destination airports.");
+      setLoading(false);
+      return;
+    }
+
     // Validate that origin and destination airports are not the same
-    if (originAirport === destinationAirport) {
+    if (originAirport.iata === destinationAirport.iata) {
       alert("Please select different airports.");
       setLoading(false);
       return;
@@ -178,6 +206,16 @@ const Delay = () => {
         <Typography variant="h4" gutterBottom sx={{ color: 'var(--primary-color)', fontWeight: 'bold' }}>
           Flight Delay Prediction
         </Typography>
+        {datasetsError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Could not load airports from Supabase: {datasetsError}
+          </Alert>
+        )}
+        {datasetsLoading && (
+          <Typography role="status" sx={{ mb: 2 }}>
+            Loading airports from Supabase…
+          </Typography>
+        )}
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
 
@@ -186,6 +224,7 @@ const Delay = () => {
               <Autocomplete
                 options={airports}
                 getOptionLabel={(option) => `${option.name} (${option.iata})`}
+                isOptionEqualToValue={(option, value) => option.iata === value.iata}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -207,6 +246,7 @@ const Delay = () => {
               <Autocomplete
                 options={airports}
                 getOptionLabel={(option) => `${option.name} (${option.iata})`}
+                isOptionEqualToValue={(option, value) => option.iata === value.iata}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -284,7 +324,7 @@ const Delay = () => {
                   type="submit"
                   variant="contained"
                   fullWidth
-                  disabled={loading}
+                  disabled={loading || datasetsLoading || Boolean(datasetsError)}
                   sx={{
                     backgroundColor: 'var(--primary-color)',
                     fontWeight: 'bold',

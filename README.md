@@ -128,17 +128,11 @@ The Vite development server proxies `/api` requests to this backend. The combine
 
 The root `vercel.json` defines two services: `backend` (FastAPI, rooted at `backend/`) and `frontend` (Vite, rooted at `frontend/`). Requests under `/api/` route to the backend; all other paths route to the frontend.
 
-The prediction APIs use local SQLite databases by default. On Vercel, the fallback database files are placed in `/tmp`, which is writable but ephemeral and may not persist between function instances or deployments. Configure `DATABASE_URL` to use a managed database (and add its SQLAlchemy driver to `backend/requirements.txt`) if prediction history must persist.
+The prediction APIs use local SQLite databases during local development. For Vercel, configure `DATABASE_URL` with your Supabase Postgres connection string; the backend requires it in Vercel rather than writing prediction history to ephemeral function storage. In Supabase, copy a database connection string from **Project Settings → Database → Connection string**. Use the pooler connection string for serverless deployments, and add it to the Vercel project's **Settings → Environment Variables** as `DATABASE_URL` for every environment where the app is deployed. Redeploy after changing the variable.
+
+Keep `DATABASE_URL` server-side only: do not use a `VITE_` prefix or expose it in frontend code. The backend creates the `fare_prediction` and `delay_prediction` tables from its SQLAlchemy models when it connects. Prediction history is then stored in Supabase Postgres rather than local files.
 
 The backend pins `xgboost-cpu` rather than the standard `xgboost` distribution. The delay classifier runs on CPU, and the CPU-only distribution avoids XGBoost's large Linux NCCL dependency, which can exceed Vercel's function bundle-size limit.
 
 ### Database
-**Important Note**: A new terminal is needed to run the backend concurrently with the frontend. Make sure that this terminal is strictly in the correct directory of `./COS30049-COMPUTING-TECHNOLOGY-INNOVATION-PROJECT_FLIGHTFORESIGHT/backend` 
-To be able to observe the database of the delay prediction and fare prediction, following these steps:
-1. Install the DB browser for SQLite on https://sqlitebrowser.org/dl/. Choose your suitable versions.
-2. After installation is complete, open the app (it is called 'DB Browser for SQLite)
-3. Choose 'Open Database' and browse for the created database (there are 2 database: fare_prediction.db for fare prediction and delay_prediction.db for delay prediction. 
-Both databases are stored in the backend folder.)
-4. After opening the database, you can view the tables and data in the database by choosing the 'Browse Data' tab and you could execute SQL commands on 'Execute SQL' tab.
-This app is a high quality, visual, open source tool designed for people who want to create, search, and edit SQLite or SQLCipher database files. It works with Windows, macOS, and most versions of Linux and Unix.
-
+For local development without `DATABASE_URL`, the prediction APIs create `fare_prediction.db` and `delay_prediction.db` in the backend folder. To use Supabase locally, set `DATABASE_URL` in the backend process environment before starting Uvicorn. You can inspect Supabase prediction history in the Supabase SQL Editor by querying the `fare_prediction` and `delay_prediction` tables.
